@@ -12,6 +12,7 @@ PY="$HERE/.venv/bin/python"
 case "${1:-help}" in
   login)   exec "$PY" "$HERE/epilogin.py" setup ;;
   refresh) exec "$PY" "$HERE/epilogin.py" refresh ;;
+  calendar) shift; exec "$PY" "$HERE/calendar_cli.py" "$@" ;;
   serve)   shift; exec "$PY" "$HERE/server.py" "$@" ;;
   whoami|list|register) exec "$PY" "$HERE/epiplan.py" "$@" ;;
   *) cat <<'H'
@@ -23,6 +24,8 @@ epiplan <command>
   list       [--days N] [--open-only]   upcoming activities
   register   EVENT_ID [--slot ID]       register to an event
   serve      [--http PORT] [--read-only]   run the MCP server by hand
+  calendar   connect|status|calendars|schedule|check|sync|add
+             sync selected Epitech activities and manage personal events on macOS
 H
   ;;
 esac

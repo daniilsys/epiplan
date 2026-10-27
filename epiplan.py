@@ -15,6 +15,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 from client import ApiError, AuthError, Client
+import tools
 
 
 def iso(dt):
@@ -43,20 +44,6 @@ def is_open(ev):
     return not cap or ev["registrationsCount"] < cap
 
 
-def register(c, ev_id, slot_id=None, any_slot=False):
-    if slot_id is None and not any_slot:
-        return c.call("POST", f"/events/{ev_id}/registrations")
-    if slot_id is not None:
-        return c.call("POST", f"/events/{ev_id}/slots/{slot_id}/registrations")
-    last = None
-    for s in sorted(c.call("GET", f"/events/{ev_id}/slots"), key=lambda s: s["startDate"]):
-        try:
-            return c.call("POST", f"/events/{ev_id}/slots/{s['id']}/registrations")
-        except ApiError as e:
-            last = e
-    raise last or ApiError(0, "no slot")
-
-
 def my_registration(c, ev):
     if ev.get("mySlotStartDate"):
         return True
@@ -78,8 +65,25 @@ def cmd_list(c, a):
 
 
 def cmd_register(c, a):
-    r = register(c, a.event_id, a.slot, a.any_slot)
-    print("OK", json.dumps(r, ensure_ascii=False))
+    tools._client = c
+    if a.apply:
+        os.environ["EPIPLAN_ENABLE_WRITES"] = "1"
+    slot_id = a.slot
+    if a.any_slot and slot_id is None:
+        available = [s for s in tools.get_event(a.event_id).get("slots", []) if not s["taken"]]
+        if not available:
+            sys.exit("No free slot. Nothing registered.")
+        slot_id = min(available, key=lambda s: s["start"])["id"]
+    r = tools.register_event(a.event_id, a.reason, slot_id, a.allow_overlap, dry_run=not a.apply)
+    # Keep Epitech and calendar identifiers internal, just like the planning skill.
+    if not r["ok"]:
+        print(r["error"], file=sys.stderr)
+        for event in r.get("conflicts", []):
+            print(f"  {event['title']} {event['start']}", file=sys.stderr)
+        raise SystemExit(1)
+    print("Registration preview. Add --apply to confirm." if r.get("dry_run") else "Registered.")
+    if r.get("result", {}).get("warning"):
+        print(r["result"]["warning"], file=sys.stderr)
 
 
 def main():
@@ -93,7 +97,10 @@ def main():
     s = sub.add_parser("register")
     s.add_argument("event_id", type=int)
     s.add_argument("--slot", type=int)
-    s.add_argument("--any-slot", action="store_true", help="try slots in order until one is granted")
+    s.add_argument("--any-slot", action="store_true", help="select the earliest free slot, then check conflicts")
+    s.add_argument("--apply", action="store_true", help="register after checking both schedules; default: preview")
+    s.add_argument("--allow-overlap", action="store_true")
+    s.add_argument("--reason", default="Activity selected by the user in the epiplan CLI")
     s.set_defaults(fn=cmd_register)
     a = p.parse_args()
     try:

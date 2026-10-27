@@ -12,6 +12,7 @@ from mcp.server.fastmcp import FastMCP
 
 import tools
 from client import ApiError, AuthError
+from apple_calendar import CalendarError
 
 
 def safe(fn):
@@ -20,7 +21,7 @@ def safe(fn):
     def wrapper(*a, **kw):
         try:
             return fn(*a, **kw)
-        except (ApiError, AuthError) as e:
+        except (ApiError, AuthError, CalendarError, ValueError) as e:
             return tools._error(e)
     return wrapper
 
@@ -28,8 +29,10 @@ def safe(fn):
 def build(read_only=False, host="127.0.0.1", port=8000):
     mcp = FastMCP("epitech-planning", host=host, port=port, instructions=(
         "Tools for the student's my.epitech.eu planning. Dates are Europe/Paris. "
-        "Write tools default to dry_run=True; only pass dry_run=False when the rules clearly require the action, "
-        "and always give a short `reason`."))
+        "Read both Epitech and Apple Calendar before scheduling when connected. "
+        "Write tools default to dry_run=True; only pass dry_run=False after the user approves the selected activity, "
+        "and always give a short `reason`. Do not display internal event or slot IDs. "
+        "A successful school registration with a failed calendar copy must be retried with sync_calendar_event only."))
     for fn in tools.READ_TOOLS + ([] if read_only else tools.WRITE_TOOLS):
         mcp.tool()(safe(fn))
     return mcp

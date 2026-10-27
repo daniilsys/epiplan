@@ -2,6 +2,10 @@
 
 # epiplan
 
+**New on macOS:** connect Apple Calendar to copy selected Epitech activities,
+check personal appointments before registering, and add non-Epitech events.
+Run `epiplan calendar connect` after installation. See [Apple Calendar setup and examples](docs/APPLE_CALENDAR.md).
+
 **Your my.epitech.eu planning, as tools an AI agent can use.**<br>
 Check what's open, get a clear report, register to activities and modules — with you in the loop.
 

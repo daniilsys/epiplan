@@ -23,6 +23,13 @@ fi
 "$HERE/.venv/bin/pip" install -q -r "$HERE/requirements.txt"
 "$HERE/.venv/bin/playwright" install chromium
 
+if [[ "$(uname -s)" == Darwin ]]; then
+  echo "==> Apple Calendar bridge"
+  if ! bash "$HERE/bin/build-calendar"; then
+    echo "Apple Calendar bridge could not be built. Epitech tools still work. Install Xcode command line tools and run bin/build-calendar to enable Calendar." >&2
+  fi
+fi
+
 echo "==> config in $CONF"
 mkdir -p "$CONF"; chmod 700 "$CONF"
 [ -f "$CONF/rules.md" ] || cp "$HERE/rules.example.md" "$CONF/rules.md"
@@ -71,4 +78,5 @@ Done. Next:
   1. epiplan login        (log in once; MFA works)
   2. edit $CONF/rules.md  (your registration preferences)
   3. restart your agent, then ask it to check your planning (/planning)
+  4. optional on macOS: epiplan calendar connect (Apple Calendar conflict checks + automatic sync)
 EOF
