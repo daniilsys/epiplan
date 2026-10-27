@@ -65,7 +65,7 @@ Check what's open, get a clear report, register to activities and modules — wi
 Needs Python 3.10+ and an MCP-capable agent. The installer registers itself automatically with the `claude` and `codex` CLIs when they are available; otherwise it prints what to add by hand.
 
 ```bash
-git clone https://github.com/daniilsys/epiplan.git
+git clone --branch feature/apple-calendar https://github.com/matheoStattner/epiplan.git
 cd epiplan
 ./install.sh
 epiplan login          # once: log in with Microsoft in the window that opens (MFA works)
