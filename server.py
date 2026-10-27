@@ -9,6 +9,7 @@ import argparse
 import functools
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 
 import tools
 from client import ApiError, AuthError
@@ -16,13 +17,13 @@ from apple_calendar import CalendarError
 
 
 def safe(fn):
-    """Turn API/auth failures into a result the LLM can read instead of a protocol error."""
+    """Return readable tool failures without violating a read tool's list schema."""
     @functools.wraps(fn)
     def wrapper(*a, **kw):
         try:
             return fn(*a, **kw)
         except (ApiError, AuthError, CalendarError, ValueError) as e:
-            return tools._error(e)
+            raise ToolError(tools._error(e)["error"]) from e
     return wrapper
 
 

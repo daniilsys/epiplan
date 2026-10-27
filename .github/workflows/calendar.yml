@@ -13,6 +13,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - run: python -m pip install -r requirements.txt
       - run: python -m unittest discover -s tests -v
       - run: bash -n install.sh bin/epiplan bin/build-calendar
   eventkit:
