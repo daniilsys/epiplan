@@ -167,6 +167,21 @@ class SchedulingTests(unittest.TestCase):
         self.assertEqual(calendar.upsert.call_args.kwargs["start"], "2040-10-23T14:00+02:00")
         self.assertEqual(self.school.writes, [("POST", "/events/1/slots/9/registrations")])
 
+    def test_room_names_are_exported_without_duplicates_or_empty_entries(self):
+        self.event["rooms"] = [{"name": " Room A "}, {"name": "Room A"}, {"name": "Room B"},
+                               {"name": " "}, {"name": None}, "invalid"]
+        result = self.register(dry_run=False)
+        self.assertTrue(result["ok"])
+        self.assertEqual(calendar.upsert.call_args.kwargs["location"], "Room A, Room B")
+
+    def test_selected_slot_room_takes_precedence_over_parent_room(self):
+        self.event = activity(slots=True)
+        self.event["rooms"] = [{"name": "Parent room"}]
+        self.school.slots = [{"id": 9, "startDate": START, "endDate": END, "registration": None,
+                              "rooms": [{"name": "Review room"}]}]
+        self.assertTrue(self.register(slot_id=9, dry_run=False)["ok"])
+        self.assertEqual(calendar.upsert.call_args.kwargs["location"], "Review room")
+
     def test_missing_registered_slot_fails_closed(self):
         self.school.bookings = [activity(2, slots=True)]
         self.assertFalse(self.register(dry_run=False)["ok"])

@@ -293,7 +293,10 @@ def _both_conflicts(start, end, exclude_event_id=None, exclude_marker=None):
 
 def _calendar_event_plan(ev, slot=None):
     chosen = slot or ev
-    return {"title": ev.get("fullTitle") or ev.get("activityName") or ev.get("title") or "Epitech",
+    rooms = chosen.get("rooms") or ev.get("rooms") or []
+    location = ", ".join(dict.fromkeys(r["name"].strip() for r in rooms
+                                     if isinstance(r, dict) and isinstance(r.get("name"), str) and r["name"].strip()))
+    return {"location": location, "title": ev.get("fullTitle") or ev.get("activityName") or ev.get("title") or "Epitech",
             "start": _local(chosen["startDate"]), "end": _local(chosen["endDate"]),
             "marker": calendar.marker(ev["id"], client().login),
             "notes": "Activité Epitech sélectionnée dans epiplan. https://my.epitech.eu"}

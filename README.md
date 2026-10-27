@@ -160,6 +160,11 @@ Your agent's own permission prompt on each real write is the last line of defenc
 
 ## How login works
 
+On macOS, epiplan uses installed Google Chrome when available, so the login can
+use the system's saved passkeys. Other installations use bundled Chromium.
+Set `EPIPLAN_BROWSER=chromium` to choose bundled Chromium explicitly, or use
+another installed Playwright browser channel through `EPIPLAN_BROWSER`.
+
 The site signs you in with Microsoft Entra ID. Its internal refresh token only survives a few days of inactivity (measured: dead after about 67 hours), so pasting a token isn't reliable. epiplan uses your **Microsoft session** instead, which lasts much longer.
 
 1. `epiplan login` opens a browser once. You sign in normally; the state is saved to `session.json`.

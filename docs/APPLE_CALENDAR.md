@@ -46,6 +46,8 @@ After connection, `register_event` checks registered Epitech activities **and al
 readable Apple calendars**. A successful selected registration is automatically
 copied into the chosen calendar. For slot activities, only the selected slot's
 actual time is copied.
+Room names are copied into the Calendar location field, using the selected
+slot's room when provided and falling back to the activity's rooms.
 
 Use `sync_calendar_event` to copy an existing activity without registering to it.
 Choose a free or personally booked slot for activities with slots. Copies are

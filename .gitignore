@@ -9,3 +9,4 @@ calendar.json
 calendar-state.json
 calendar-state.lock
 *.before-chrome
+*.bak
