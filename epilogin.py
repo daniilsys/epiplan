@@ -31,7 +31,15 @@ def write_private(path, text):
 
 
 def open_context(p, headless, state):
-    browser = p.chromium.launch(headless=headless)
+    # Use installed Chrome for macOS passkeys; Chromium remains a fallback.
+    channel = os.environ.get("EPIPLAN_BROWSER")
+    if channel is None and sys.platform == "darwin":
+        if Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome").exists():
+            channel = "chrome"
+    launch_options = {"headless": headless}
+    if channel and channel != "chromium":
+        launch_options["channel"] = channel
+    browser = p.chromium.launch(**launch_options)
     kw = {}
     if state:
         data = json.loads(Path(state).read_text())

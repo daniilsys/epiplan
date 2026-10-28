@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+[[ "$(uname -s)" == Darwin ]] || { echo "Apple Calendar requires macOS." >&2; exit 1; }
+command -v swiftc >/dev/null || { echo "Install Apple's command line tools: xcode-select --install" >&2; exit 1; }
+APP="$HERE/.build/Epiplan Calendar.app"
+mkdir -p "$APP/Contents/MacOS" "$HERE/.build/module-cache"
+cp "$HERE/macos/Info.plist" "$APP/Contents/Info.plist"
+swiftc -parse-as-library -swift-version 5 -O \
+  -target "$(uname -m)-apple-macosx13.0" \
+  -module-cache-path "$HERE/.build/module-cache" \
+  -framework EventKit \
+  "$HERE/macos/CalendarBridge.swift" -o "$APP/Contents/MacOS/epiplan-calendar"
+codesign --force --sign - --identifier eu.epiplan.calendar "$APP"
+echo "Apple Calendar helper built. Connect with: epiplan calendar connect"

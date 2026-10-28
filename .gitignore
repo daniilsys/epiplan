@@ -4,3 +4,9 @@ session.json
 tokens.json
 audit.jsonl
 rules.md
+.build/
+calendar.json
+calendar-state.json
+calendar-state.lock
+*.before-chrome
+*.bak

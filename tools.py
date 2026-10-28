@@ -17,6 +17,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from client import ApiError, AuthError, Client
+import apple_calendar as calendar
+from apple_calendar import CalendarError
 
 TZ = ZoneInfo("Europe/Paris")
 MAX_WINDOW_DAYS = 44  # API limit is 45
@@ -221,24 +223,113 @@ def _audit(entry):
         f.write(json.dumps({"at": datetime.now(TZ).isoformat(timespec="seconds"), **entry}, ensure_ascii=False) + "\n")
 
 
-def _guarded_write(action, target, reason, dry_run, plan, do):
+def _guarded_write(action, target, reason, dry_run, plan, do, cost=1):
     """Shared tail of every write: dry run, kill switch, budget, audit, API error mapping."""
     global _writes_done
+    if not reason.strip():
+        return {"ok": False, "error": "A non-empty reason is required."}
     if dry_run:
         _audit({"action": action, "target": target, "reason": reason, "dry_run": True})
         return {"ok": True, "dry_run": True, "would": plan}
     if os.environ.get("EPIPLAN_ENABLE_WRITES") != "1":
         return {"ok": False, "error": "Writes are disabled (set EPIPLAN_ENABLE_WRITES=1 on the server)."}
-    if _writes_done >= int(os.environ.get("EPIPLAN_MAX_WRITES", "5")):
+    if _writes_done + cost > int(os.environ.get("EPIPLAN_MAX_WRITES", "5")):
         return {"ok": False, "error": "Write budget for this run exhausted."}
     try:
         result = do()
-    except (ApiError, AuthError) as e:
+    except (ApiError, AuthError, CalendarError) as e:
         _audit({"action": action, "target": target, "reason": reason, "ok": False, "error": str(e)[:200]})
         return _error(e)
-    _writes_done += 1
+    _writes_done += cost
     _audit({"action": action, "target": target, "reason": reason, "ok": True})
-    return {"ok": True, "done": plan}
+    answer = {"ok": True, "done": plan}
+    if result is not None:
+        answer["result"] = result
+    return answer
+
+
+def _epitech_bookings(start, end):
+    """Read all my bookings, with the actual booked slot rather than its parent event."""
+    c, result, seen = client(), [], set()
+    cur, stop = calendar.bounds(start, end)
+    while cur < stop:
+        nxt = min(cur + timedelta(days=MAX_WINDOW_DAYS), stop)
+        raw = c.call("GET", "/events", params={"startDate": _api(cur), "endDate": _api(nxt),
+                     "registered": "me", "cursus": c.profile["cursus"], "semester": c.profile["semester"]})
+        for ev in raw:
+            if ev["id"] in seen:
+                continue
+            seen.add(ev["id"])
+            slots = [None]
+            if ev.get("activitySlotsEnabled"):
+                slots = [s for s in c.call("GET", f"/events/{ev['id']}/slots") if _slim_slot(s, c.login)["mine"]]
+                if not slots:
+                    raise CalendarError("A registered Epitech activity has no readable booked slot. Cannot verify availability.")
+            for slot in slots:
+                s, e = (slot or ev)["startDate"], (slot or ev)["endDate"]
+                if _dt(s) >= stop or _dt(e) <= _dt(start):
+                    continue
+                result.append({"id": ev["id"], "title": ev.get("fullTitle") or ev.get("title") or ev.get("activityName") or "Epitech",
+                               "start": _local(s), "end": _local(e), "source": "epitech", "busy": True,
+                               "marker": calendar.marker(ev["id"], c.login)})
+        cur = nxt
+    return sorted(result, key=lambda e: _dt(e["start"]))
+
+
+def _epitech_conflicts(start, end, exclude_event_id=None):
+    s, e = calendar.bounds(start, end)
+    return [ev for ev in _epitech_bookings(start, end) if ev["id"] != exclude_event_id
+            and _dt(ev["start"]) < e and _dt(ev["end"]) > s]
+
+
+def _both_conflicts(start, end, exclude_event_id=None, exclude_marker=None):
+    if not calendar.enabled():
+        raise CalendarError("Connect Apple Calendar first with epiplan calendar connect.")
+    school = _epitech_conflicts(start, end, exclude_event_id)
+    mirrors = {e["marker"] for e in school}
+    return school + [e for e in calendar.conflicts(start, end, exclude_marker=exclude_marker)
+                     if e.get("marker") not in mirrors]
+
+
+def _calendar_event_plan(ev, slot=None):
+    chosen = slot or ev
+    rooms = chosen.get("rooms") or ev.get("rooms") or []
+    location = ", ".join(dict.fromkeys(r["name"].strip() for r in rooms
+                                     if isinstance(r, dict) and isinstance(r.get("name"), str) and r["name"].strip()))
+    return {"location": location, "title": ev.get("fullTitle") or ev.get("activityName") or ev.get("title") or "Epitech",
+            "start": _local(chosen["startDate"]), "end": _local(chosen["endDate"]),
+            "marker": calendar.marker(ev["id"], client().login),
+            "notes": "Activité Epitech sélectionnée dans epiplan. https://my.epitech.eu"}
+
+
+def _register_and_sync(c, path, calendar_plan):
+    # The school API and EventKit are two independent systems: never retry the school
+    # registration if only the calendar copy failed.
+    c.call("POST", path)
+    if calendar_plan is None:
+        return {"epitech_registered": True}
+    try:
+        result = calendar.upsert(**calendar_plan)
+        _audit({"action": "auto_sync_calendar", "target": calendar_plan["marker"], "ok": True})
+        return {"epitech_registered": True, "calendar_synced": True, "calendar": result}
+    except (CalendarError, OSError) as exc:
+        _audit({"action": "auto_sync_calendar", "target": calendar_plan["marker"], "ok": False})
+        return {"epitech_registered": True, "calendar_synced": False,
+                "warning": f"Epitech registration succeeded; Apple Calendar copy failed: {exc}. Retry sync_calendar_event only, not register_event."}
+
+
+def _unregister_and_unsync(c, path, tag):
+    c.call("DELETE", path)
+    if tag is None:
+        return {"epitech_unregistered": True}
+    try:
+        result = calendar.remove(tag)
+        _audit({"action": "auto_remove_calendar_copy", "target": tag, "ok": True})
+        return {"epitech_unregistered": True, "calendar_removed": result["removed"]}
+    except (CalendarError, OSError) as exc:
+        _audit({"action": "auto_remove_calendar_copy", "target": tag, "ok": False})
+        return {"epitech_unregistered": True, "calendar_removed": False,
+                "warning": f"School unregistration succeeded; calendar copy remains: {exc}. Remove only its Epitech copy in Calendar."}
 
 
 def register_event(event_id: int, reason: str, slot_id: int | None = None, allow_overlap: bool = False,
@@ -265,6 +356,7 @@ def register_event(event_id: int, reason: str, slot_id: int | None = None, allow
             return {"ok": False, "error": "This activity uses slots: call get_event and pass slot_id."}
         if not uses_slots and slot_id is not None:
             return {"ok": False, "error": "This event has no slots."}
+        slot = None
         if uses_slots:
             slots = c.call("GET", f"/events/{event_id}/slots")
             if any(_slim_slot(s, c.login)["mine"] for s in slots):
@@ -278,18 +370,27 @@ def register_event(event_id: int, reason: str, slot_id: int | None = None, allow
                 return {"ok": False, "error": "Already registered."}
             start, end = _dt(ev["startDate"]), _dt(ev["endDate"])
         if not allow_overlap:
-            mine = _my_event_ids(_api(start - timedelta(days=1)), _api(end + timedelta(days=1)))
-            clash = [e for e in _fetch_events(_api(start - timedelta(days=1)), _api(end + timedelta(days=1)))
-                     if e["id"] in mine and e["id"] != event_id
-                     and _dt(e["startDate"]) < end and _dt(e["endDate"]) > start]
+            clash = _epitech_conflicts(_api(start), _api(end), exclude_event_id=event_id)
+            if calendar.enabled():
+                clash += calendar.conflicts(_api(start), _api(end), exclude_marker=calendar.marker(event_id, c.login))
             if clash:
-                return {"ok": False, "error": "Overlaps with my events.",
-                        "conflicts": [{"id": e["id"], "title": e.get("fullTitle"), "start": _local(e["startDate"])}
-                                      for e in clash]}
+                return {"ok": False, "error": "Overlaps with my Epitech or Apple Calendar events.", "conflicts": clash}
+        # Even an explicit overlap override must not hide a broken calendar connection.
+        calendar_plan = None
+        config = calendar.load_config()
+        if config.get("enabled"):
+            calendar.events(_api(start), _api(end))
+            if config.get("auto_sync", True):
+                target = next((cal for cal in calendar.calendars() if cal["id"] == config.get("calendar_id")), None)
+                if target is None or not target["writable"]:
+                    raise CalendarError("The calendar selected for automatic sync is unavailable or read-only.")
+                calendar_plan = _calendar_event_plan(ev, slot)
         path = f"/events/{event_id}/slots/{slot_id}/registrations" if uses_slots else f"/events/{event_id}/registrations"
-        plan = {"register": ev.get("fullTitle"), "event_id": event_id, "slot_id": slot_id, "start": _local(start.isoformat())}
-        return _guarded_write("register_event", event_id, reason, dry_run, plan, lambda: c.call("POST", path))
-    except (ApiError, AuthError) as e:
+        plan = {"register": ev.get("fullTitle"), "event_id": event_id, "slot_id": slot_id, "start": _local(start.isoformat()),
+                "sync_to_apple_calendar": calendar_plan is not None}
+        return _guarded_write("register_event", event_id, reason, dry_run, plan,
+                              lambda: _register_and_sync(c, path, calendar_plan), cost=2 if calendar_plan else 1)
+    except (ApiError, AuthError, CalendarError, ValueError) as e:
         return _error(e)
 
 
@@ -311,8 +412,12 @@ def unregister_event(event_id: int, reason: str, dry_run: bool = True) -> dict:
         elif not c.call("GET", f"/events/{event_id}/registrations/me"):
             return {"ok": False, "error": "Not registered."}
         plan = {"unregister": ev.get("fullTitle"), "event_id": event_id}
-        return _guarded_write("unregister_event", event_id, reason, dry_run, plan, lambda: c.call("DELETE", path))
-    except (ApiError, AuthError) as e:
+        config = calendar.load_config()
+        tag = calendar.marker(event_id, c.login) if config.get("enabled") and config.get("auto_sync", True) else None
+        plan["remove_apple_calendar_copy"] = tag is not None
+        return _guarded_write("unregister_event", event_id, reason, dry_run, plan,
+                              lambda: _unregister_and_unsync(c, path, tag), cost=2 if tag else 1)
+    except (ApiError, AuthError, CalendarError) as e:
         return _error(e)
 
 
@@ -336,5 +441,116 @@ def register_module(unit_instance_id: int, reason: str, dry_run: bool = True) ->
         return _error(e)
 
 
-READ_TOOLS = [get_profile, list_modules, list_events, my_schedule, get_event]
-WRITE_TOOLS = [register_event, unregister_event, register_module]
+def apple_calendar_status() -> dict:
+    """Local macOS Calendar connection state; never opens a permission prompt."""
+    return calendar.status()
+
+
+def list_apple_calendars() -> list[dict]:
+    """Calendars available on this Mac, their names and whether they are writable."""
+    return calendar.calendars()
+
+
+def combined_schedule(start: str, end: str) -> dict:
+    """Read registered Epitech slots AND Apple calendars; deduplicate managed Epitech copies.
+    Refuses to claim availability if either connected source cannot be read."""
+    if not calendar.enabled():
+        raise CalendarError("Connect Apple Calendar first with epiplan calendar connect.")
+    school = _epitech_bookings(start, end)
+    mirrors = {e["marker"] for e in school}
+    personal = [e for e in calendar.events(start, end) if e.get("marker") not in mirrors]
+    return {"events": sorted(school + personal, key=lambda e: _dt(e["start"])),
+            "sources_checked": ["epitech", "apple_calendar"]}
+
+
+def check_availability(start: str, end: str) -> dict:
+    """Check a proposed time against BOTH Epitech registrations and Apple calendars."""
+    conflicts = _both_conflicts(start, end)
+    return {"available": not conflicts, "conflicts": conflicts, "sources_checked": ["epitech", "apple_calendar"]}
+
+
+def connect_apple_calendar(reason: str, calendar_id: str | None = None,
+                           auto_sync: bool = True, dry_run: bool = True) -> dict:
+    """Opt in to local Apple Calendar access. Auto-sync chosen registrations by default.
+    With no calendar_id, creates/reuses 'Epitech (epiplan)'. macOS permission is required."""
+    plan = {"connect_apple_calendar": True, "calendar_id": calendar_id, "auto_sync": auto_sync}
+    return _guarded_write("connect_apple_calendar", "local_mac", reason, dry_run, plan,
+                          lambda: calendar.connect(calendar_id, auto_sync))
+
+
+def sync_calendar_event(event_id: int, reason: str, slot_id: int | None = None,
+                        calendar_id: str | None = None, allow_overlap: bool = False,
+                        dry_run: bool = True) -> dict:
+    """Copy/update a selected Epitech event in Apple Calendar without registering at school.
+    Idempotent per student and school event. Slot activities require a chosen or booked slot."""
+    try:
+        ev = _find_event(event_id)
+        if ev is None:
+            raise CalendarError("Epitech activity not found in your planning.")
+        slot = None
+        if ev.get("activitySlotsEnabled"):
+            slots = client().call("GET", f"/events/{event_id}/slots")
+            mine = [s for s in slots if _slim_slot(s, client().login)["mine"]]
+            if slot_id is None and len(mine) == 1:
+                slot = mine[0]
+            elif slot_id is not None:
+                slot = next((s for s in slots if s["id"] == slot_id), None)
+            if slot is None:
+                raise CalendarError("Choose an existing activity slot before copying it to Calendar.")
+            state = _slim_slot(slot, client().login)
+            if state["taken"] and not state["mine"]:
+                raise CalendarError("This slot is booked by someone else.")
+        elif slot_id is not None:
+            raise CalendarError("This activity has no slots.")
+        plan = _calendar_event_plan(ev, slot)
+        config = calendar.load_config()
+        target = calendar_id or config.get("calendar_id")
+        cal = next((c for c in calendar.calendars() if c["id"] == target), None)
+        if cal is None or not cal["writable"]:
+            raise CalendarError("Choose an available writable Apple calendar.")
+        conflicts = _both_conflicts(plan["start"], plan["end"], event_id, plan["marker"])
+        if conflicts and not allow_overlap:
+            return {"ok": False, "error": "Calendar copy overlaps an existing activity.", "conflicts": conflicts}
+        return _guarded_write("sync_calendar_event", plan["marker"], reason, dry_run, plan,
+                              lambda: calendar.upsert(**plan, calendar_id=calendar_id))
+    except (ApiError, AuthError, CalendarError, ValueError) as exc:
+        return _error(exc)
+
+
+def create_external_event(title: str, start: str, end: str, reason: str,
+                          calendar_id: str | None = None, location: str = "", notes: str = "",
+                          all_day: bool = False, allow_overlap: bool = False, dry_run: bool = True) -> dict:
+    """Add a personal/non-Epitech event to Apple Calendar after checking BOTH schedules.
+    Repeating the same title/time/calendar updates the same event. Never writes to Epitech."""
+    try:
+        s, e = calendar.bounds(start, end)
+        if not title.strip():
+            raise CalendarError("An event title is required.")
+        if all_day and (s.timetz().replace(tzinfo=None) != datetime.min.time()
+                        or e.timetz().replace(tzinfo=None) != datetime.min.time()):
+            raise CalendarError("All-day events must start and end at midnight; the end date is exclusive.")
+        config = calendar.load_config()
+        if not config.get("enabled"):
+            raise CalendarError("Connect Apple Calendar first with epiplan calendar connect.")
+        target = calendar_id or config.get("external_calendar_id") or config["calendar_id"]
+        tag = calendar.external_marker(title, start, end, target)
+        conflicts = _both_conflicts(start, end, exclude_marker=tag)
+        if conflicts and not allow_overlap:
+            return {"ok": False, "error": "Personal event overlaps an existing activity.", "conflicts": conflicts}
+        # Validate the destination on dry runs as well as real writes.
+        cal = next((c for c in calendar.calendars() if c["id"] == target), None)
+        if cal is None or not cal["writable"]:
+            raise CalendarError("Choose an available writable Apple calendar.")
+        plan = {"title": title.strip(), "start": s.isoformat(), "end": e.isoformat(),
+                "calendar": cal["title"], "all_day": all_day}
+        return _guarded_write("create_external_event", tag, reason, dry_run, plan,
+                              lambda: calendar.upsert(title=title.strip(), start=start, end=end, marker=tag,
+                                  calendar_id=target, location=location, notes=notes, all_day=all_day))
+    except (ApiError, AuthError, CalendarError, ValueError) as exc:
+        return _error(exc)
+
+
+READ_TOOLS = [get_profile, list_modules, list_events, my_schedule, get_event,
+              apple_calendar_status, list_apple_calendars, combined_schedule, check_availability]
+WRITE_TOOLS = [register_event, unregister_event, register_module, connect_apple_calendar,
+               sync_calendar_event, create_external_event]

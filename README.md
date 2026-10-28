@@ -2,6 +2,10 @@
 
 # epiplan
 
+**New on macOS:** connect Apple Calendar to copy selected Epitech activities,
+check personal appointments before registering, and add non-Epitech events.
+Run `epiplan calendar connect` after installation. See [Apple Calendar setup and examples](docs/APPLE_CALENDAR.md).
+
 **Your my.epitech.eu planning, as tools an AI agent can use.**<br>
 Check what's open, get a clear report, register to activities and modules — with you in the loop.
 
@@ -61,7 +65,7 @@ Check what's open, get a clear report, register to activities and modules — wi
 Needs Python 3.10+ and an MCP-capable agent. The installer registers itself automatically with the `claude` and `codex` CLIs when they are available; otherwise it prints what to add by hand.
 
 ```bash
-git clone https://github.com/daniilsys/epiplan.git
+git clone https://github.com/matheoStattner/epiplan.git
 cd epiplan
 ./install.sh
 epiplan login          # once: log in with Microsoft in the window that opens (MFA works)
@@ -155,6 +159,11 @@ Your agent's own permission prompt on each real write is the last line of defenc
 </details>
 
 ## How login works
+
+On macOS, epiplan uses installed Google Chrome when available, so the login can
+use the system's saved passkeys. Other installations use bundled Chromium.
+Set `EPIPLAN_BROWSER=chromium` to choose bundled Chromium explicitly, or use
+another installed Playwright browser channel through `EPIPLAN_BROWSER`.
 
 The site signs you in with Microsoft Entra ID. Its internal refresh token only survives a few days of inactivity (measured: dead after about 67 hours), so pasting a token isn't reliable. epiplan uses your **Microsoft session** instead, which lasts much longer.
 

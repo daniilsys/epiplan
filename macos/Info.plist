@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleIdentifier</key><string>eu.epiplan.calendar</string>
+  <key>CFBundleName</key><string>Epiplan Calendar</string>
+  <key>CFBundleExecutable</key><string>epiplan-calendar</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSUIElement</key><true/>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>Epiplan lit vos calendriers pour éviter les chevauchements et y ajoute les activités que vous choisissez.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>Epiplan lit vos calendriers pour éviter les chevauchements et y ajoute les activités que vous choisissez.</string>
+</dict></plist>
