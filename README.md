@@ -112,7 +112,7 @@ epiplan serve --http 8765        # run the MCP server by hand
 
 <table>
 <tr><th align="left">Tool</th><th align="left">What it does</th></tr>
-<tr><td><code>get_profile</code></td><td>Login, cursus, semester, school year</td></tr>
+<tr><td><code>get_profile</code></td><td>Cursus, semester, school year (no name or login: identity stays out of the agent's context)</td></tr>
 <tr><td><code>list_modules</code></td><td>Modules of the year, registration state and deadline</td></tr>
 <tr><td><code>list_events</code></td><td>Activities over any date range: seats, closing time, slots, module</td></tr>
 <tr><td><code>my_schedule</code></td><td>Events you are registered to</td></tr>
