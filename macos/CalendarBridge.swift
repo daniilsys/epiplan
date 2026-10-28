@@ -169,6 +169,11 @@ struct CalendarBridge {
             event.notes = r["notes"] as? String ?? ""
             event.url = url
             event.availability = .busy
+            // Only touch alarms when asked: a plain re-sync must keep the user's own reminders.
+            if let minutes = r["alarms"] as? [NSNumber] {
+                for alarm in event.alarms ?? [] { event.removeAlarm(alarm) }
+                for m in minutes { event.addAlarm(EKAlarm(relativeOffset: -m.doubleValue * 60)) }
+            }
             try store.save(event, span: .thisEvent, commit: true)
             return ["event": payload(event), "created": created]
         case "remove":

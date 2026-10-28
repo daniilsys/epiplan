@@ -136,7 +136,17 @@ def conflicts(start, end, *, exclude_marker=None):
             and parse(event["start"]) < e and parse(event["end"]) > s]
 
 
-def upsert(*, title, start, end, marker, calendar_id=None, location="", notes="", all_day=False):
+def reminders(reminder_minutes):
+    """Validate reminders as minutes before the start. None keeps the event's alarms, [] clears them."""
+    if reminder_minutes is None:
+        return None
+    if (not isinstance(reminder_minutes, list) or len(reminder_minutes) > 5
+            or any(isinstance(m, bool) or not isinstance(m, int) or not 0 <= m <= 40320 for m in reminder_minutes)):
+        raise CalendarError("Reminders: up to 5 whole numbers of minutes before the start, between 0 and 40320.")
+    return sorted(set(reminder_minutes))
+
+
+def upsert(*, title, start, end, marker, calendar_id=None, location="", notes="", all_day=False, alarms=None):
     bounds(start, end)
     config = load_config()
     if not config.get("enabled"):
@@ -154,7 +164,7 @@ def upsert(*, title, start, end, marker, calendar_id=None, location="", notes=""
             raise CalendarError("Cannot read calendar sync state; refusing to risk duplicate events.") from exc
         previous = state.get(marker, {})
         payload = dict(title=title, start=parse(start).isoformat(), end=parse(end).isoformat(),
-                       marker=marker, calendar_id=target, location=location, notes=notes, all_day=all_day)
+                       marker=marker, calendar_id=target, location=location, notes=notes, all_day=all_day, alarms=alarms)
         if previous:
             payload.update(apple_id=previous["id"], previous_start=previous["start"], previous_end=previous["end"])
         result = bridge("upsert", **payload)

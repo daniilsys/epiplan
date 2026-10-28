@@ -75,6 +75,15 @@ in Calendar do not register or unregister you at school. Existing school calenda
 subscriptions still count as busy: epiplan cannot safely infer that an unmarked
 subscription event is a duplicate.
 
+## Reminders
+
+`register_event`, `sync_calendar_event` and `create_external_event` accept
+`reminder_minutes`: up to five whole numbers of minutes before the start
+(0 to 40320), for example `[60, 10]`. They replace the event's reminders.
+Omitting it keeps whatever reminders the event already has, so a plain re-sync
+never removes yours; `[]` clears them. Rebuild the helper (`bin/build-calendar`)
+and restart the MCP client after upgrading.
+
 ## Add personal events
 
 These live in Apple Calendar, never in the school API, and must pass the same

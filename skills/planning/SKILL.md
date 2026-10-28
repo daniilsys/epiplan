@@ -51,6 +51,9 @@ bootstraps and clubs according to the user's rules.
   a reported copy failure. The preview says whether a copy is included.
 - To copy a selected activity without registering, preview and confirm
   `sync_calendar_event`. It updates existing copies rather than duplicating them.
+- Reminders: when the user asks for one, pass `reminder_minutes` (minutes before the
+  start, e.g. `[60, 10]`) to `register_event`, `sync_calendar_event` or
+  `create_external_event`. Omit it to keep existing reminders; `[]` clears them.
 - If registration succeeds but Calendar fails, report both outcomes. Retry
   `sync_calendar_event` only: never repeat the school registration.
 - Never use `allow_overlap=True` without an explicit choice to accept the conflict.

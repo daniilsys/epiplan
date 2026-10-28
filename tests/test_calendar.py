@@ -195,6 +195,28 @@ class SchedulingTests(unittest.TestCase):
         calendar.upsert.assert_not_called()
         self.assertEqual(self.school.writes, [])
 
+    def test_reminders_are_passed_to_the_calendar_copy(self):
+        result = self.register(dry_run=False, reminder_minutes=[60, 10, 10])
+        self.assertTrue(result["ok"])
+        self.assertEqual(calendar.upsert.call_args.kwargs["alarms"], [10, 60])
+
+    def test_reminders_are_left_untouched_when_not_requested(self):
+        self.register(dry_run=False)
+        self.assertIsNone(calendar.upsert.call_args.kwargs["alarms"])
+
+    def test_reminders_are_validated_before_any_write(self):
+        for bad in ([-5], [1.5], ["10"], [True], [1, 2, 3, 4, 5, 6], [40321]):
+            result = self.register(dry_run=False, reminder_minutes=bad)
+            self.assertFalse(result["ok"], bad)
+        self.assertEqual(self.school.writes, [])
+
+    def test_manual_sync_and_personal_event_accept_reminders(self):
+        tools.sync_calendar_event(1, reason="User asked", dry_run=False, allow_overlap=True, reminder_minutes=[30])
+        self.assertEqual(calendar.upsert.call_args.kwargs["alarms"], [30])
+        tools.create_external_event("Dentist", START, END, reason="User asked", allow_overlap=True,
+                                    dry_run=False, reminder_minutes=[])
+        self.assertEqual(calendar.upsert.call_args.kwargs["alarms"], [])
+
     def test_external_event_preview_and_apply(self):
         preview = tools.create_external_event("Lunch", START, END, "Requested")
         self.assertTrue(preview["dry_run"])

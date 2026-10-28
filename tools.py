@@ -334,10 +334,12 @@ def _unregister_and_unsync(c, path, tag):
 
 
 def register_event(event_id: int, reason: str, slot_id: int | None = None, allow_overlap: bool = False,
-                   dry_run: bool = True) -> dict:
+                   dry_run: bool = True, reminder_minutes: list[int] | None = None) -> dict:
     """Register to an event (or to one slot of it). `reason` is mandatory (audit log).
-    Checks module registration, window, capacity, overlaps. dry_run=True by default: nothing is written."""
+    Checks module registration, window, capacity, overlaps. dry_run=True by default: nothing is written.
+    reminder_minutes: optional Apple Calendar reminders, in minutes before the start (e.g. [60, 10])."""
     try:
+        alarms = calendar.reminders(reminder_minutes)
         ev = _find_event(event_id)
         if ev is None:
             return {"ok": False, "error": f"Event {event_id} not found in my planning"}
@@ -385,10 +387,10 @@ def register_event(event_id: int, reason: str, slot_id: int | None = None, allow
                 target = next((cal for cal in calendar.calendars() if cal["id"] == config.get("calendar_id")), None)
                 if target is None or not target["writable"]:
                     raise CalendarError("The calendar selected for automatic sync is unavailable or read-only.")
-                calendar_plan = _calendar_event_plan(ev, slot)
+                calendar_plan = {**_calendar_event_plan(ev, slot), "alarms": alarms}
         path = f"/events/{event_id}/slots/{slot_id}/registrations" if uses_slots else f"/events/{event_id}/registrations"
         plan = {"register": ev.get("fullTitle"), "event_id": event_id, "slot_id": slot_id, "start": _local(start.isoformat()),
-                "sync_to_apple_calendar": calendar_plan is not None}
+                "sync_to_apple_calendar": calendar_plan is not None, "reminder_minutes": alarms}
         return _guarded_write("register_event", event_id, reason, dry_run, plan,
                               lambda: _register_and_sync(c, path, calendar_plan))
     except (ApiError, AuthError, CalendarError, ValueError) as e:
@@ -481,10 +483,13 @@ def connect_apple_calendar(reason: str, calendar_id: str | None = None,
 
 def sync_calendar_event(event_id: int, reason: str, slot_id: int | None = None,
                         calendar_id: str | None = None, allow_overlap: bool = False,
-                        dry_run: bool = True) -> dict:
+                        dry_run: bool = True, reminder_minutes: list[int] | None = None) -> dict:
     """Copy/update a selected Epitech event in Apple Calendar without registering at school.
-    Idempotent per student and school event. Slot activities require a chosen or booked slot."""
+    Idempotent per student and school event. Slot activities require a chosen or booked slot.
+    reminder_minutes: optional reminders in minutes before the start (e.g. [60, 10]); [] clears them,
+    omitted keeps the existing ones."""
     try:
+        alarms = calendar.reminders(reminder_minutes)
         ev = _find_event(event_id)
         if ev is None:
             raise CalendarError("Epitech activity not found in your planning.")
@@ -503,7 +508,7 @@ def sync_calendar_event(event_id: int, reason: str, slot_id: int | None = None,
                 raise CalendarError("This slot is booked by someone else.")
         elif slot_id is not None:
             raise CalendarError("This activity has no slots.")
-        plan = _calendar_event_plan(ev, slot)
+        plan = {**_calendar_event_plan(ev, slot), "alarms": alarms}
         config = calendar.load_config()
         target = calendar_id or config.get("calendar_id")
         cal = next((c for c in calendar.calendars() if c["id"] == target), None)
@@ -520,10 +525,13 @@ def sync_calendar_event(event_id: int, reason: str, slot_id: int | None = None,
 
 def create_external_event(title: str, start: str, end: str, reason: str,
                           calendar_id: str | None = None, location: str = "", notes: str = "",
-                          all_day: bool = False, allow_overlap: bool = False, dry_run: bool = True) -> dict:
+                          all_day: bool = False, allow_overlap: bool = False, dry_run: bool = True,
+                          reminder_minutes: list[int] | None = None) -> dict:
     """Add a personal/non-Epitech event to Apple Calendar after checking BOTH schedules.
-    Repeating the same title/time/calendar updates the same event. Never writes to Epitech."""
+    Repeating the same title/time/calendar updates the same event. Never writes to Epitech.
+    reminder_minutes: optional reminders in minutes before the start (e.g. [30]); [] clears them."""
     try:
+        alarms = calendar.reminders(reminder_minutes)
         s, e = calendar.bounds(start, end)
         if not title.strip():
             raise CalendarError("An event title is required.")
@@ -543,10 +551,10 @@ def create_external_event(title: str, start: str, end: str, reason: str,
         if cal is None or not cal["writable"]:
             raise CalendarError("Choose an available writable Apple calendar.")
         plan = {"title": title.strip(), "start": s.isoformat(), "end": e.isoformat(),
-                "calendar": cal["title"], "all_day": all_day}
+                "calendar": cal["title"], "all_day": all_day, "reminder_minutes": alarms}
         return _guarded_write("create_external_event", tag, reason, dry_run, plan,
                               lambda: calendar.upsert(title=title.strip(), start=start, end=end, marker=tag,
-                                  calendar_id=target, location=location, notes=notes, all_day=all_day),
+                                  calendar_id=target, location=location, notes=notes, all_day=all_day, alarms=alarms),
                               cost=0)
     except (ApiError, AuthError, CalendarError, ValueError) as exc:
         return _error(exc)
