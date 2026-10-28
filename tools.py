@@ -145,10 +145,9 @@ def _slim_slot(s, me):
 # ---------- read tools ----------
 
 def get_profile() -> dict:
-    """Who am I: login, name, cursus, semester, school year."""
+    """Which cohort I am in: cursus, semester, school year. No identity (login, name) is exposed to the agent."""
     p = client().profile
-    return {k: p.get(k) for k in ("login", "firstname", "lastname", "cursus", "semester", "tekYear",
-                                  "promotion", "cursusSchoolYear")}
+    return {k: p.get(k) for k in ("cursus", "semester", "tekYear", "promotion", "cursusSchoolYear")}
 
 
 def list_modules(only_unregistered: bool = False, school_year: int | None = None) -> list[dict]:
