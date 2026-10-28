@@ -193,6 +193,24 @@ docker run -d --name epiplan -v /srv/epiplan/data:/data -p 127.0.0.1:8765:8765 \
 - The HTTP endpoint has **no authentication**: keep it on localhost or a private network, or put an authenticating proxy in front.
 - Not known yet: how long a Microsoft session lives for your tenant, and whether a new IP or country triggers MFA again. If so, `refresh` fails with a clear message: log in locally and copy the file again.
 
+## Add-ons
+
+Optional features that live on their own branch, so `main` stays small.
+
+| Add-on | Branch | What it does |
+|---|---|---|
+| Apple Calendar (macOS) | [`addon/apple-calendar`](https://github.com/daniilsys/epiplan/tree/addon/apple-calendar) | Checks your Apple Calendar for conflicts before registering, copies chosen activities (with room and reminders) into it, and adds personal events. Local EventKit only, nothing leaves your Mac. Built by [@matheoStattner](https://github.com/matheoStattner). |
+
+To use one, install from its branch instead of `main`:
+
+```bash
+git clone -b addon/apple-calendar https://github.com/daniilsys/epiplan.git
+cd epiplan && ./install.sh
+epiplan calendar connect
+```
+
+Or, from an existing clone: `git fetch origin && git switch addon/apple-calendar`, then restart your agent. Setup details are in `docs/APPLE_CALENDAR.md` on that branch.
+
 ## Repository
 
 | Path | Role |
