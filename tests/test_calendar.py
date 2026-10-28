@@ -98,7 +98,7 @@ class SchedulingTests(unittest.TestCase):
         self.assertTrue(result["result"]["calendar_synced"])
         self.assertEqual(self.school.writes, [("POST", "/events/1/registrations")])
         calendar.upsert.assert_called_once()
-        self.assertEqual(tools._writes_done, 2)
+        self.assertEqual(tools._writes_done, 1)
 
     def test_preview_neither_registers_nor_creates_calendar_event(self):
         result = self.register()
@@ -107,11 +107,12 @@ class SchedulingTests(unittest.TestCase):
         self.assertEqual(self.school.writes, [])
         calendar.upsert.assert_not_called()
 
-    def test_two_system_write_budget_is_reserved_before_registration(self):
+    def test_calendar_copy_does_not_use_write_budget(self):
         with patch.dict(os.environ, {"EPIPLAN_MAX_WRITES": "1"}):
-            self.assertFalse(self.register(dry_run=False)["ok"])
-        self.assertEqual(self.school.writes, [])
-        calendar.upsert.assert_not_called()
+            self.assertTrue(self.register(dry_run=False)["ok"])
+        self.assertEqual(len(self.school.writes), 1)
+        calendar.upsert.assert_called_once()
+        self.assertEqual(tools._writes_done, 1)
 
     def test_calendar_failure_after_school_success_reports_partial_success(self):
         calendar.upsert.side_effect = calendar.CalendarError("permission revoked")

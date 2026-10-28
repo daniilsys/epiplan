@@ -107,8 +107,8 @@ then checks conflicts; it no longer attempts writes until one succeeds.
 - Calendar access is opt-in; Epitech-only operation works before connection.
   Once connected, read failures block scheduling rather than assuming “free”.
 - Tool writes default to dry runs and require a nonempty audit reason. The kill
-  switch and write budget apply. An automatic school + calendar pair reserves
-  two writes, conservatively also if only the school write succeeds.
+  switch applies to every write, but only Epitech writes count against the write
+  budget (`EPIPLAN_MAX_WRITES`). Apple Calendar copies and personal events are free.
 - `--apply` is explicit CLI authorization. Only use `allow_overlap=True` /
   `--allow-overlap` after the user's choice to accept that conflict. It does not
   ignore a broken connected source.

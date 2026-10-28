@@ -224,7 +224,8 @@ def _audit(entry):
 
 
 def _guarded_write(action, target, reason, dry_run, plan, do, cost=1):
-    """Shared tail of every write: dry run, kill switch, budget, audit, API error mapping."""
+    """Shared tail of every write: dry run, kill switch, budget, audit, API error mapping.
+    `cost` counts against EPIPLAN_MAX_WRITES; local Apple Calendar writes pass cost=0, only Epitech writes are budgeted."""
     global _writes_done
     if not reason.strip():
         return {"ok": False, "error": "A non-empty reason is required."}
@@ -389,7 +390,7 @@ def register_event(event_id: int, reason: str, slot_id: int | None = None, allow
         plan = {"register": ev.get("fullTitle"), "event_id": event_id, "slot_id": slot_id, "start": _local(start.isoformat()),
                 "sync_to_apple_calendar": calendar_plan is not None}
         return _guarded_write("register_event", event_id, reason, dry_run, plan,
-                              lambda: _register_and_sync(c, path, calendar_plan), cost=2 if calendar_plan else 1)
+                              lambda: _register_and_sync(c, path, calendar_plan))
     except (ApiError, AuthError, CalendarError, ValueError) as e:
         return _error(e)
 
@@ -416,7 +417,7 @@ def unregister_event(event_id: int, reason: str, dry_run: bool = True) -> dict:
         tag = calendar.marker(event_id, c.login) if config.get("enabled") and config.get("auto_sync", True) else None
         plan["remove_apple_calendar_copy"] = tag is not None
         return _guarded_write("unregister_event", event_id, reason, dry_run, plan,
-                              lambda: _unregister_and_unsync(c, path, tag), cost=2 if tag else 1)
+                              lambda: _unregister_and_unsync(c, path, tag))
     except (ApiError, AuthError, CalendarError) as e:
         return _error(e)
 
@@ -475,7 +476,7 @@ def connect_apple_calendar(reason: str, calendar_id: str | None = None,
     With no calendar_id, creates/reuses 'Epitech (epiplan)'. macOS permission is required."""
     plan = {"connect_apple_calendar": True, "calendar_id": calendar_id, "auto_sync": auto_sync}
     return _guarded_write("connect_apple_calendar", "local_mac", reason, dry_run, plan,
-                          lambda: calendar.connect(calendar_id, auto_sync))
+                          lambda: calendar.connect(calendar_id, auto_sync), cost=0)
 
 
 def sync_calendar_event(event_id: int, reason: str, slot_id: int | None = None,
@@ -512,7 +513,7 @@ def sync_calendar_event(event_id: int, reason: str, slot_id: int | None = None,
         if conflicts and not allow_overlap:
             return {"ok": False, "error": "Calendar copy overlaps an existing activity.", "conflicts": conflicts}
         return _guarded_write("sync_calendar_event", plan["marker"], reason, dry_run, plan,
-                              lambda: calendar.upsert(**plan, calendar_id=calendar_id))
+                              lambda: calendar.upsert(**plan, calendar_id=calendar_id), cost=0)
     except (ApiError, AuthError, CalendarError, ValueError) as exc:
         return _error(exc)
 
@@ -545,7 +546,8 @@ def create_external_event(title: str, start: str, end: str, reason: str,
                 "calendar": cal["title"], "all_day": all_day}
         return _guarded_write("create_external_event", tag, reason, dry_run, plan,
                               lambda: calendar.upsert(title=title.strip(), start=start, end=end, marker=tag,
-                                  calendar_id=target, location=location, notes=notes, all_day=all_day))
+                                  calendar_id=target, location=location, notes=notes, all_day=all_day),
+                              cost=0)
     except (ApiError, AuthError, CalendarError, ValueError) as exc:
         return _error(exc)
 
