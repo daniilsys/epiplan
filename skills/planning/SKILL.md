@@ -56,6 +56,7 @@ bootstraps and clubs according to the user's rules.
   `create_external_event`. Omit it to keep existing reminders; `[]` clears them.
 - If registration succeeds but Calendar fails, report both outcomes. Retry
   `sync_calendar_event` only: never repeat the school registration.
+- Exams are refused by default. Only pass `allow_exam=True` when the user explicitly names that exam and asks to register; never on your own initiative.
 - Never use `allow_overlap=True` without an explicit choice to accept the conflict.
 - Never unregister unless the user names the exact activity. With auto-sync,
   unregistration removes its tracked Epitech copy, never a personal event.

@@ -134,7 +134,7 @@ The guardrails live in `tools.py`, not in a prompt, so a confused agent can't ta
 | Kill switch | Real writes are refused unless `EPIPLAN_ENABLE_WRITES=1` |
 | Write budget | `EPIPLAN_MAX_WRITES` real writes per server process (default 5) |
 | Module allowlist | `register_module` only for unit codes in `EPIPLAN_MODULE_ALLOWLIST` |
-| Pre-checks | module registered, window open, not full, not past, slot free, **no overlap**, exams refused |
+| Pre-checks | module registered, window open, not full, not past, slot free, **no overlap**, exams refused (unless `allow_exam=True`, on explicit request) |
 | Audit log | every attempt, with a mandatory `reason`, in `~/.config/epiplan/audit.jsonl` |
 | Read-only mode | `epiplan serve --read-only` does not register write tools at all |
 
