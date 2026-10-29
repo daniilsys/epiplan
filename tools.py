@@ -481,6 +481,26 @@ def connect_apple_calendar(reason: str, calendar_id: str | None = None,
                           lambda: calendar.connect(calendar_id, auto_sync), cost=0)
 
 
+def _resolve_slot(event_id, ev, slot_id):
+    if ev.get("activitySlotsEnabled"):
+        slots = client().call("GET", f"/events/{event_id}/slots")
+        mine = [s for s in slots if _slim_slot(s, client().login)["mine"]]
+        slot = None
+        if slot_id is None and len(mine) == 1:
+            slot = mine[0]
+        elif slot_id is not None:
+            slot = next((s for s in slots if s["id"] == slot_id), None)
+        if slot is None:
+            raise CalendarError("Choose an existing activity slot before copying it to Calendar.")
+        state = _slim_slot(slot, client().login)
+        if state["taken"] and not state["mine"]:
+            raise CalendarError("This slot is booked by someone else.")
+        return slot
+    if slot_id is not None:
+        raise CalendarError("This activity has no slots.")
+    return None
+
+
 def sync_calendar_event(event_id: int, reason: str, slot_id: int | None = None,
                         calendar_id: str | None = None, allow_overlap: bool = False,
                         dry_run: bool = True, reminder_minutes: list[int] | None = None) -> dict:
@@ -493,21 +513,7 @@ def sync_calendar_event(event_id: int, reason: str, slot_id: int | None = None,
         ev = _find_event(event_id)
         if ev is None:
             raise CalendarError("Epitech activity not found in your planning.")
-        slot = None
-        if ev.get("activitySlotsEnabled"):
-            slots = client().call("GET", f"/events/{event_id}/slots")
-            mine = [s for s in slots if _slim_slot(s, client().login)["mine"]]
-            if slot_id is None and len(mine) == 1:
-                slot = mine[0]
-            elif slot_id is not None:
-                slot = next((s for s in slots if s["id"] == slot_id), None)
-            if slot is None:
-                raise CalendarError("Choose an existing activity slot before copying it to Calendar.")
-            state = _slim_slot(slot, client().login)
-            if state["taken"] and not state["mine"]:
-                raise CalendarError("This slot is booked by someone else.")
-        elif slot_id is not None:
-            raise CalendarError("This activity has no slots.")
+        slot = _resolve_slot(event_id, ev, slot_id)
         plan = {**_calendar_event_plan(ev, slot), "alarms": alarms}
         config = calendar.load_config()
         target = calendar_id or config.get("calendar_id")
@@ -520,6 +526,47 @@ def sync_calendar_event(event_id: int, reason: str, slot_id: int | None = None,
         return _guarded_write("sync_calendar_event", plan["marker"], reason, dry_run, plan,
                               lambda: calendar.upsert(**plan, calendar_id=calendar_id), cost=0)
     except (ApiError, AuthError, CalendarError, ValueError) as exc:
+        return _error(exc)
+
+
+def update_calendar_event(event_id: int, reason: str, title: str | None = None, location: str | None = None,
+                          notes: str | None = None, reminder_minutes: list[int] | None = None,
+                          slot_id: int | None = None, dry_run: bool = True) -> dict:
+    """Edit the Apple Calendar copy of an Epitech activity that epiplan created (title, location, notes,
+    reminders). Times always follow the school planning. Omitted fields are reset to the school values
+    except reminders, which are kept. Never touches personal events or Epitech itself."""
+    try:
+        alarms = calendar.reminders(reminder_minutes)
+        if title is not None and not title.strip():
+            raise CalendarError("The title cannot be empty.")
+        ev = _find_event(event_id)
+        if ev is None:
+            raise CalendarError("Epitech activity not found in your planning.")
+        tag = calendar.marker(event_id, client().login)
+        if not calendar.tracked(tag):
+            raise CalendarError("No Apple Calendar copy of this activity created by epiplan. Use sync_calendar_event first.")
+        base = _calendar_event_plan(ev, _resolve_slot(event_id, ev, slot_id))
+        plan = {**base, "alarms": alarms}
+        for key, value in (("title", title.strip() if title else None), ("location", location), ("notes", notes)):
+            if value is not None:
+                plan[key] = value
+        return _guarded_write("update_calendar_event", tag, reason, dry_run, plan,
+                              lambda: calendar.upsert(**plan), cost=0)
+    except (ApiError, AuthError, CalendarError, ValueError) as exc:
+        return _error(exc)
+
+
+def remove_calendar_event(event_id: int, reason: str, dry_run: bool = True) -> dict:
+    """Delete the Apple Calendar copy of an Epitech activity that epiplan created. Does NOT unregister
+    from school (use unregister_event for that) and never deletes personal events."""
+    try:
+        tag = calendar.marker(event_id, client().login)
+        if not calendar.tracked(tag):
+            return {"ok": False, "error": "No Apple Calendar copy of this activity created by epiplan."}
+        return _guarded_write("remove_calendar_event", tag, reason, dry_run,
+                              {"remove_apple_calendar_copy": True, "event_id": event_id},
+                              lambda: calendar.remove(tag), cost=0)
+    except (ApiError, AuthError, CalendarError) as exc:
         return _error(exc)
 
 
@@ -563,4 +610,4 @@ def create_external_event(title: str, start: str, end: str, reason: str,
 READ_TOOLS = [get_profile, list_modules, list_events, my_schedule, get_event,
               apple_calendar_status, list_apple_calendars, combined_schedule, check_availability]
 WRITE_TOOLS = [register_event, unregister_event, register_module, connect_apple_calendar,
-               sync_calendar_event, create_external_event]
+               sync_calendar_event, update_calendar_event, remove_calendar_event, create_external_event]

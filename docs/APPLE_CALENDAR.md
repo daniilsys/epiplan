@@ -132,7 +132,9 @@ then checks conflicts; it no longer attempts writes until one succeeds.
 Read: `apple_calendar_status`, `list_apple_calendars`, `combined_schedule`,
 `check_availability`.
 
-Write: `connect_apple_calendar`, `sync_calendar_event`, `create_external_event`.
+Write: `connect_apple_calendar`, `sync_calendar_event`, `update_calendar_event`,
+`remove_calendar_event`, `create_external_event`. The update and remove tools only act on copies
+epiplan created for Epitech activities, never on personal events, and never change the school registration.
 `register_event` and `unregister_event` include automatic calendar follow-up.
 Read-only server mode exposes no write tools.
 

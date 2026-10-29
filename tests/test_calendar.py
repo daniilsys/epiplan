@@ -271,6 +271,30 @@ class SchedulingTests(unittest.TestCase):
         self.assertTrue(result["result"]["epitech_unregistered"])
         self.assertIn("calendar copy remains", result["result"]["warning"])
 
+    def test_update_requires_a_tracked_copy(self):
+        with patch.object(calendar, "tracked", return_value=False):
+            result = tools.update_calendar_event(1, "Rename", title="X", dry_run=False)
+        self.assertFalse(result["ok"])
+        calendar.upsert.assert_not_called()
+
+    def test_update_overrides_fields_and_keeps_school_times(self):
+        with patch.object(calendar, "tracked", return_value=True):
+            result = tools.update_calendar_event(1, "Rename", title="  Mon projet ", notes="n", reminder_minutes=[10], dry_run=False)
+        self.assertTrue(result["ok"])
+        sent = calendar.upsert.call_args.kwargs
+        self.assertEqual((sent["title"], sent["notes"], sent["alarms"]), ("Mon projet", "n", [10]))
+        self.assertEqual(sent["marker"], calendar.marker(1, self.school.login))
+        self.assertEqual(self.school.writes, [])
+
+    def test_remove_calendar_event_only_removes_tracked_copy(self):
+        with patch.object(calendar, "tracked", return_value=False):
+            self.assertFalse(tools.remove_calendar_event(1, "Cleanup", dry_run=False)["ok"])
+        calendar.remove.assert_not_called()
+        with patch.object(calendar, "tracked", return_value=True):
+            self.assertTrue(tools.remove_calendar_event(1, "Cleanup", dry_run=False)["ok"])
+        calendar.remove.assert_called_once_with(calendar.marker(1, self.school.login))
+        self.assertEqual(self.school.writes, [])
+
     def test_kill_switch_and_empty_reason_still_protect_writes(self):
         with patch.dict(os.environ, {"EPIPLAN_ENABLE_WRITES": "0"}):
             self.assertFalse(self.register(dry_run=False)["ok"])

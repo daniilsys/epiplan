@@ -177,6 +177,15 @@ def upsert(*, title, start, end, marker, calendar_id=None, location="", notes=""
         return result
 
 
+def tracked(marker):
+    """True when this Epitech mirror is tracked in the local sync state (i.e. created by epiplan)."""
+    path = config_dir() / "calendar-state.json"
+    try:
+        return marker in (json.loads(path.read_text()) if path.exists() else {})
+    except (OSError, ValueError) as exc:
+        raise CalendarError("Cannot read calendar sync state; refusing to touch an event.") from exc
+
+
 def remove(marker):
     """Remove only the Epitech mirror tracked locally, never a personal event."""
     folder = config_dir()
