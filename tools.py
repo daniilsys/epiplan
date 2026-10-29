@@ -241,9 +241,10 @@ def _guarded_write(action, target, reason, dry_run, plan, do):
 
 
 def register_event(event_id: int, reason: str, slot_id: int | None = None, allow_overlap: bool = False,
-                   dry_run: bool = True) -> dict:
+                   allow_exam: bool = False, dry_run: bool = True) -> dict:
     """Register to an event (or to one slot of it). `reason` is mandatory (audit log).
-    Checks module registration, window, capacity, overlaps. dry_run=True by default: nothing is written."""
+    Checks module registration, window, capacity, overlaps. Exams are refused unless allow_exam=True,
+    which the user must have asked for explicitly. dry_run=True by default: nothing is written."""
     try:
         ev = _find_event(event_id)
         if ev is None:
@@ -251,8 +252,8 @@ def register_event(event_id: int, reason: str, slot_id: int | None = None, allow
         c, now = client(), datetime.now(timezone.utc)
         if ev["unitInstanceId"] not in _registered_modules():
             return {"ok": False, "error": f"Not registered to module {ev.get('unitCode')} (register_module first)."}
-        if ev.get("isExam"):
-            return {"ok": False, "error": "Exam: refused, register by hand."}
+        if ev.get("isExam") and not allow_exam:
+            return {"ok": False, "error": "Exam: refused. Only retry with allow_exam=True if the user explicitly asked for this exam."}
         if _dt(ev["endDate"]) <= now or _closes_at(ev) <= now:
             return {"ok": False, "error": f"Registration closed since {_local(_closes_at(ev).isoformat())}."}
         cap = ev.get("maxCapacity")
