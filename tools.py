@@ -529,6 +529,58 @@ def sync_calendar_event(event_id: int, reason: str, slot_id: int | None = None,
         return _error(exc)
 
 
+def sync_all(reason: str, days: int = 60, calendar_id: str | None = None,
+             dry_run: bool = True, reminder_minutes: list[int] | None = None) -> dict:
+    """Copy ALL my upcoming registered Epitech activities (next `days` days, default 60) to Apple Calendar
+    in one call, instead of one sync_calendar_event per event. Idempotent: existing copies are updated.
+    Slot activities use the slot I booked. One failing event does not stop the others; see `failed`."""
+    try:
+        alarms = calendar.reminders(reminder_minutes)
+        if days < 1:
+            raise CalendarError("days must be at least 1.")
+        config = calendar.load_config()
+        if not config.get("enabled"):
+            raise CalendarError("Connect Apple Calendar first with epiplan calendar connect.")
+        target = calendar_id or config.get("calendar_id")
+        cal = next((c for c in calendar.calendars() if c["id"] == target), None)
+        if cal is None or not cal["writable"]:
+            raise CalendarError("Choose an available writable Apple calendar.")
+        now = datetime.now(timezone.utc)
+        start, end = _api(now), _api(now + timedelta(days=days))
+        mine = _my_event_ids(start, end)
+        plans, failed = [], []
+        for ev in _fetch_events(start, end):
+            if ev["id"] not in mine:
+                continue
+            try:
+                slot = None
+                if ev.get("activitySlotsEnabled"):
+                    slots = [s for s in client().call("GET", f"/events/{ev['id']}/slots") if _slim_slot(s, client().login)["mine"]]
+                    if not slots:
+                        raise CalendarError("No readable booked slot.")
+                    slot = slots[0]
+                plans.append({**_calendar_event_plan(ev, slot), "alarms": alarms})
+            except (ApiError, AuthError, CalendarError) as exc:
+                failed.append({"title": ev.get("fullTitle") or ev.get("title"), "error": str(exc)})
+        plans.sort(key=lambda p: p["start"])
+
+        def do():
+            synced = []
+            for p in plans:
+                try:
+                    calendar.upsert(**p, calendar_id=calendar_id)
+                    synced.append({"title": p["title"], "start": p["start"]})
+                except (CalendarError, OSError) as exc:
+                    failed.append({"title": p["title"], "error": str(exc)})
+            return {"synced": synced, "failed": failed}
+
+        plan = {"sync_to_apple_calendar": [{"title": p["title"], "start": p["start"]} for p in plans],
+                "calendar": cal["title"], "failed": failed}
+        return _guarded_write("sync_all", f"next_{days}_days", reason, dry_run, plan, do, cost=0)
+    except (ApiError, AuthError, CalendarError, ValueError) as exc:
+        return _error(exc)
+
+
 def update_calendar_event(event_id: int, reason: str, title: str | None = None, location: str | None = None,
                           notes: str | None = None, reminder_minutes: list[int] | None = None,
                           slot_id: int | None = None, dry_run: bool = True) -> dict:
@@ -610,4 +662,4 @@ def create_external_event(title: str, start: str, end: str, reason: str,
 READ_TOOLS = [get_profile, list_modules, list_events, my_schedule, get_event,
               apple_calendar_status, list_apple_calendars, combined_schedule, check_availability]
 WRITE_TOOLS = [register_event, unregister_event, register_module, connect_apple_calendar,
-               sync_calendar_event, update_calendar_event, remove_calendar_event, create_external_event]
+               sync_calendar_event, sync_all, update_calendar_event, remove_calendar_event, create_external_event]

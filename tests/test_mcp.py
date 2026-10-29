@@ -22,7 +22,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     listing = await session.list_tools()
-                    self.assertEqual(len(listing.tools), 9 if read_only else 17)
+                    self.assertEqual(len(listing.tools), 9 if read_only else 18)
                     for tool in listing.tools:
                         if "dry_run" in tool.inputSchema["properties"]:
                             self.assertTrue(tool.inputSchema["properties"]["dry_run"]["default"])

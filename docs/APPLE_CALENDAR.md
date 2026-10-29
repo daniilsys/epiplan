@@ -49,6 +49,9 @@ actual time is copied.
 Room names are copied into the Calendar location field, using the selected
 slot's room when provided and falling back to the activity's rooms.
 
+Use `sync_all` to copy all your upcoming registered activities (next 60 days by default) in one call;
+it is idempotent and reports per-event failures without stopping.
+
 Use `sync_calendar_event` to copy an existing activity without registering to it.
 Choose a free or personally booked slot for activities with slots. Copies are
 keyed by a hash of the account and school event, so repeating sync updates the
@@ -132,7 +135,7 @@ then checks conflicts; it no longer attempts writes until one succeeds.
 Read: `apple_calendar_status`, `list_apple_calendars`, `combined_schedule`,
 `check_availability`.
 
-Write: `connect_apple_calendar`, `sync_calendar_event`, `update_calendar_event`,
+Write: `connect_apple_calendar`, `sync_calendar_event`, `sync_all`, `update_calendar_event`,
 `remove_calendar_event`, `create_external_event`. The update and remove tools only act on copies
 epiplan created for Epitech activities, never on personal events, and never change the school registration.
 `register_event` and `unregister_event` include automatic calendar follow-up.

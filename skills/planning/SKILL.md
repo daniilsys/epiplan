@@ -51,6 +51,8 @@ bootstraps and clubs according to the user's rules.
   a reported copy failure. The preview says whether a copy is included.
 - To copy a selected activity without registering, preview and confirm
   `sync_calendar_event`. It updates existing copies rather than duplicating them.
+- To copy every upcoming registered activity at once (default next 60 days), preview and
+  confirm `sync_all` instead of calling `sync_calendar_event` one event at a time.
 - Reminders: when the user asks for one, pass `reminder_minutes` (minutes before the
   start, e.g. `[60, 10]`) to `register_event`, `sync_calendar_event` or
   `create_external_event`. Omit it to keep existing reminders; `[]` clears them.
