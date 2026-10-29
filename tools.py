@@ -138,10 +138,22 @@ def _find_event(event_id):
     return None
 
 
+def _slot_is_mine(reg, me):
+    """Project activities book the slot for a team: `student` is null and the booking points to
+    `projectRegistration`, so check the leader, accepted members and registered students too."""
+    if (reg.get("student") or {}).get("login") == me:
+        return True
+    pr = reg.get("projectRegistration") or {}
+    logins = [m.get("login") for m in pr.get("members") or [] if m.get("status") == "accepted"]
+    logins.append((pr.get("leader") or {}).get("login"))
+    logins += [r.get("login") for r in reg.get("registeredStudents") or []]
+    return me in logins
+
+
 def _slim_slot(s, me):
     reg = s.get("registration")
     return {"id": s["id"], "start": _local(s["startDate"]), "end": _local(s["endDate"]),
-            "taken": bool(reg), "mine": bool(reg and (reg.get("student") or {}).get("login") == me)}
+            "taken": bool(reg), "mine": bool(reg and _slot_is_mine(reg, me))}
 
 
 # ---------- read tools ----------

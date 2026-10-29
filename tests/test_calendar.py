@@ -183,6 +183,16 @@ class SchedulingTests(unittest.TestCase):
         self.assertTrue(self.register(slot_id=9, dry_run=False)["ok"])
         self.assertEqual(calendar.upsert.call_args.kwargs["location"], "Review room")
 
+    def test_team_booked_slot_is_mine_when_i_am_in_the_team(self):
+        self.school.bookings = [activity(2, slots=True, start="2040-10-23T09:00:00+02:00", end="2040-10-23T18:00:00+02:00")]
+        self.school.slots = [{"id": 5, "startDate": "2040-10-23T10:00:00+02:00", "endDate": "2040-10-23T11:00:00+02:00",
+                              "registration": {"student": None, "projectRegistration": {
+                                  "leader": {"login": "other@example.test"},
+                                  "members": [{"login": self.school.login, "status": "accepted"}]}}}]
+        result = tools.sync_all("Team slot", dry_run=False)
+        self.assertEqual(result["result"]["synced"][0]["start"], "2040-10-23T10:00+02:00")
+        self.assertEqual(result["result"]["failed"], [])
+
     def test_missing_registered_slot_fails_closed(self):
         self.school.bookings = [activity(2, slots=True)]
         self.assertFalse(self.register(dry_run=False)["ok"])
