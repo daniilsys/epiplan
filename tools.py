@@ -299,7 +299,8 @@ def _calendar_event_plan(ev, slot=None):
     return {"location": location, "title": ev.get("fullTitle") or ev.get("activityName") or ev.get("title") or "Epitech",
             "start": _local(chosen["startDate"]), "end": _local(chosen["endDate"]),
             "marker": calendar.marker(ev["id"], client().login),
-            "notes": "Activité Epitech sélectionnée dans epiplan. https://my.epitech.eu"}
+            "notes": "\n\n".join(p for p in ((ev.get("activityDescription") or "").strip(),
+                                             "Activité Epitech sélectionnée dans epiplan. https://my.epitech.eu") if p)}
 
 
 def _register_and_sync(c, path, calendar_plan):
