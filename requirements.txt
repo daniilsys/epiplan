@@ -1,2 +1,4 @@
 playwright==1.49.1
 mcp>=1.2,<2
+google-api-python-client>=2.201,<3
+google-auth-oauthlib>=1.5,<2

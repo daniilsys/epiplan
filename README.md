@@ -120,6 +120,18 @@ epiplan serve --http 8765        # run the MCP server by hand
 
 Dates are `Europe/Paris`; a bare date means that day at midnight. There is deliberately no module-unregistration tool.
 
+## Google Calendar
+
+`epiplan calendar sync` copies the activities you are registered to into your Google Calendar. Nothing else is sent. Re-running it updates the same events, and events you unregister from are removed on the next sync (only events created by epiplan are ever deleted). It is read-only on the Epitech side.
+
+One-time setup:
+
+1. In Google Cloud Console, create a project, enable the **Google Calendar API**, and create an OAuth client of type **Desktop app**.
+2. Save its JSON as `~/.config/epiplan/google_client_secret.json`.
+3. Run `epiplan calendar login` and approve in the browser.
+
+Then `epiplan calendar sync [--days 30] [--calendar primary] [--no-prune]`.
+
 ## Safety
 
 The guardrails live in `tools.py`, not in a prompt, so a confused agent can't talk its way around them.

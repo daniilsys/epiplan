@@ -4,3 +4,5 @@ session.json
 tokens.json
 audit.jsonl
 rules.md
+google_token.json
+google_client_secret.json

@@ -13,6 +13,7 @@ case "${1:-help}" in
   login)   exec "$PY" "$HERE/epilogin.py" setup ;;
   refresh) exec "$PY" "$HERE/epilogin.py" refresh ;;
   serve)   shift; exec "$PY" "$HERE/server.py" "$@" ;;
+  calendar) shift; exec "$PY" "$HERE/gcal.py" "$@" ;;
   whoami|list|register) exec "$PY" "$HERE/epiplan.py" "$@" ;;
   *) cat <<'H'
 epiplan <command>
@@ -23,6 +24,7 @@ epiplan <command>
   list       [--days N] [--open-only]   upcoming activities
   register   EVENT_ID [--slot ID]       register to an event
   serve      [--http PORT] [--read-only]   run the MCP server by hand
+  calendar   login | sync [--days N] [--calendar ID] [--no-prune]   copy my registered activities to Google Calendar
 H
   ;;
 esac
