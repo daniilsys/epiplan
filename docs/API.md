@@ -97,6 +97,7 @@ All under `/api`, with `Bearer`.
 | My registration to an event | `GET /events/{id}/registrations/me` ✅ (`null` if not registered) |
 | Seats | `registrationsCount` / `maxCapacity` in the event; `GET /events/{id}/registrations/count` ✅ → `{count}` |
 | Slots of an event | `GET /events/{id}/slots` ✅ |
+| People registered to an event | `GET /events/{id}/registrations` ✅ → array of `{id, eventId, createdAt, cursusYear, registeredBy, student{firstname, lastname, login, promotion, campus, …}}`. Empty for events with slots: read `slots[].registration.student` instead. Other students' data: desktop app only, never passed to the agent. |
 | One event | `GET /events/{id}` ✅ (⚠️ returns the raw event, **without** enriched fields `fullTitle`, `unitCode`, `registrationsCount`...: use `GET /events` for those) |
 | Yearly planning | `GET /units/instances/annual-planning?schoolYear` ✅ |
 
@@ -126,6 +127,7 @@ Read pitfalls ✅:
 - After a registration: `registrations/count` +1, the event shows up in `registered=me`, `registrations/me` returns the registration with your profile. After unregistering, everything is back to the initial state.
 - Simple registrations on an event without slots have no observable overlap check (untested).
 - Modules: `endRegistrationDate` bounds registration; `startDate`/`endDate` frame the module.
+- **Sequential slots** (`sequentialSlots: true`, seen on a defense, 2026-11-06): slots starting at the same time form a *block* (3 parallel 30-min slots there). Only the first block with a free slot is open (the last one with `sequentialSlotsDescending: true`); a slot of a later block → **409 `You must fill the current slot block before registering for a later one`**. Both fields are on `/events` list items and on `/events/{id}`; slot objects carry no block id, group them by `startDate`.
 - Activities with slots: `slotsCount` is 0 until staff creates the slots (13 out of 14 in the observed window). Nothing to book before that.
 
 **Inferred from bundle messages (📄, never triggered)**
@@ -134,7 +136,6 @@ Read pitfalls ✅:
 - An event with slots is registered per slot, not per event ("this activity uses slots, register through its slots").
 - One slot / one session per activity; same for exams.
 - Past events: registration and unregistration forbidden.
-- Sequential slots (`sequentialSlots`): the current block must be filled before the next, in ascending or descending order.
 - `forceRegistration` modules/activities: auto-registered, unregistration forbidden.
 - "this unit is not available for your cursus" message, modules targeted by specialty.
 - Overlap: only a warning in the UI, so the API probably lets it through; **the tool must detect it**.

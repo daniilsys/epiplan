@@ -142,6 +142,28 @@ def _slim_slot(s, me):
             "taken": bool(reg), "mine": bool(reg and (reg.get("student") or {}).get("login") == me)}
 
 
+def _open_slot_ids(ev, slots) -> set:
+    """Free slots open to booking. Slots starting at the same time form a block; with
+    `sequentialSlots` only the first block that still has a free slot is open (the last one with
+    `sequentialSlotsDescending`): the API refuses a later block with 409 "You must fill the current
+    slot block before registering for a later one". Same rule as the desktop app (planning.rs)."""
+    free = [s for s in slots if not s.get("registration")]
+    if not ev.get("sequentialSlots") or not free:
+        return {s["id"] for s in free}
+    pick = max if ev.get("sequentialSlotsDescending") else min
+    current = pick(_dt(s["startDate"]) for s in free)
+    return {s["id"] for s in free if _dt(s["startDate"]) == current}
+
+
+def _slots_view(ev, slots, me) -> dict:
+    """Slots for get_event: `locked` = free but not open yet (sequential slots)."""
+    open_ids = _open_slot_ids(ev, slots)
+    view = [{**_slim_slot(s, me), "locked": not s.get("registration") and s["id"] not in open_ids} for s in slots]
+    bookable = [s for s in view if not s["taken"] and not s["locked"]]
+    return {"slots": view, "slots_free": sum(1 for s in view if not s["taken"]),
+            "free_slot_times": sorted({s["start"] for s in bookable})}
+
+
 # ---------- read tools ----------
 
 def get_profile() -> dict:
@@ -193,22 +215,17 @@ def get_event(event_id: int) -> dict:
     if ev is None:
         # Not in my cursus/semester planning listing: still show what the API exposes about the event.
         raw = c.call("GET", f"/events/{event_id}")
-        slots = [_slim_slot(s, c.login) for s in c.call("GET", f"/events/{event_id}/slots")]
         return {"id": event_id, "enriched": False, "start": _local(raw["startDate"]), "end": _local(raw["endDate"]),
                 "registered": bool(c.call("GET", f"/events/{event_id}/registrations/me")),
-                "slots": slots, "slots_free": sum(1 for s in slots if not s["taken"]),
-                "free_slot_times": sorted({s["start"] for s in slots if not s["taken"]}),
+                **_slots_view(raw, c.call("GET", f"/events/{event_id}/slots"), c.login),
                 "note": "Event is not in my cursus/semester listing; module and seat info unavailable."}
     mine = {event_id} if c.call("GET", f"/events/{event_id}/registrations/me") else set()
     out = _slim_event(ev, mine)
     out["module"]["registered"] = ev["unitInstanceId"] in _registered_modules()
     out["description"] = (ev.get("activityDescription") or "")[:500]
     if ev.get("activitySlotsEnabled"):
-        slots = c.call("GET", f"/events/{event_id}/slots")
-        out["slots"] = [_slim_slot(s, c.login) for s in slots]
+        out.update(_slots_view(ev, c.call("GET", f"/events/{event_id}/slots"), c.login))
         out["registered"] = out["registered"] or any(s["mine"] for s in out["slots"])
-        out["slots_free"] = sum(1 for s in out["slots"] if not s["taken"])
-        out["free_slot_times"] = sorted({s["start"] for s in out["slots"] if not s["taken"]})
     return out
 
 
@@ -267,9 +284,14 @@ def register_event(event_id: int, reason: str, slot_id: int | None = None, allow
         if c.call("GET", f"/events/{event_id}/registrations/me"):
             return {"ok": False, "error": "Already registered."}
         if uses_slots:
-            slot = next((s for s in c.call("GET", f"/events/{event_id}/slots") if s["id"] == slot_id), None)
+            slots = c.call("GET", f"/events/{event_id}/slots")
+            slot = next((s for s in slots if s["id"] == slot_id), None)
             if slot is None or slot.get("registration"):
                 return {"ok": False, "error": "Slot does not exist or is taken."}
+            open_ids = _open_slot_ids(ev, slots)
+            if slot_id not in open_ids:
+                block = next(_local(s["startDate"]) for s in slots if s["id"] in open_ids)
+                return {"ok": False, "error": f"Slots fill in order: pick a slot of the current block ({block})."}
             start, end = _dt(slot["startDate"]), _dt(slot["endDate"])
         else:
             start, end = _dt(ev["startDate"]), _dt(ev["endDate"])
