@@ -545,7 +545,7 @@ def sync_calendar_event(event_id: int, reason: str, slot_id: int | None = None,
 def sync_all(reason: str, days: int = 60, calendar_id: str | None = None,
              dry_run: bool = True, reminder_minutes: list[int] | None = None) -> dict:
     """Copy ALL my upcoming registered Epitech activities (next `days` days, default 60) to Apple Calendar
-    in one call, instead of one sync_calendar_event per event. Idempotent: existing copies are updated.
+    and remove tracked upcoming copies that are no longer registered. Idempotent: existing copies are updated.
     Slot activities use the slot I booked. One failing event does not stop the others; see `failed`."""
     try:
         alarms = calendar.reminders(reminder_minutes)
@@ -558,17 +558,20 @@ def sync_all(reason: str, days: int = 60, calendar_id: str | None = None,
         cal = next((c for c in calendar.calendars() if c["id"] == target), None)
         if cal is None or not cal["writable"]:
             raise CalendarError("Choose an available writable Apple calendar.")
-        now = datetime.now(timezone.utc)
-        start, end = _api(now), _api(now + timedelta(days=days))
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        end_dt = now + timedelta(days=days)
+        start, end = _api(now), _api(end_dt)
         mine = _my_event_ids(start, end)
+        login = client().login
+        events = _fetch_events(start, end)
         plans, failed = [], []
-        for ev in _fetch_events(start, end):
+        for ev in events:
             if ev["id"] not in mine:
                 continue
             try:
                 slot = None
                 if ev.get("activitySlotsEnabled"):
-                    slots = [s for s in client().call("GET", f"/events/{ev['id']}/slots") if _slim_slot(s, client().login)["mine"]]
+                    slots = [s for s in client().call("GET", f"/events/{ev['id']}/slots") if _slim_slot(s, login)["mine"]]
                     if not slots:
                         raise CalendarError("No readable booked slot.")
                     slot = slots[0]
@@ -577,17 +580,46 @@ def sync_all(reason: str, days: int = 60, calendar_id: str | None = None,
                 failed.append({"title": ev.get("fullTitle") or ev.get("title"), "error": str(exc)})
         plans.sort(key=lambda p: p["start"])
 
+        active_markers = {calendar.marker(eid, login) for eid in mine}
+        titles_by_marker = {
+            calendar.marker(ev["id"], login): ev.get("fullTitle") or ev.get("activityName") or ev.get("title") or "Epitech"
+            for ev in events
+        }
+        stale = []
+        for tag, entry in sorted(calendar.tracked_events("epiplan://epitech/").items(),
+                                 key=lambda kv: kv[1].get("start", "")):
+            if tag in active_markers:
+                continue
+            try:
+                entry_start = calendar.parse(entry["start"])
+            except (KeyError, ValueError, TypeError, AttributeError):
+                continue
+            if now <= entry_start < end_dt:
+                stale.append({
+                    "marker": tag,
+                    "title": titles_by_marker.get(tag, "Epitech"),
+                    "start": _local(entry["start"]),
+                })
+
         def do():
-            synced = []
+            synced, removed = [], []
             for p in plans:
                 try:
                     calendar.upsert(**p, calendar_id=calendar_id)
                     synced.append({"title": p["title"], "start": p["start"]})
                 except (CalendarError, OSError) as exc:
                     failed.append({"title": p["title"], "error": str(exc)})
-            return {"synced": synced, "failed": failed}
+            for s in stale:
+                try:
+                    res = calendar.remove(s["marker"])
+                    if res.get("removed"):
+                        removed.append({"title": s["title"], "start": s["start"]})
+                except (CalendarError, OSError) as exc:
+                    failed.append({"title": s["title"], "error": str(exc)})
+            return {"synced": synced, "removed": removed, "failed": failed}
 
         plan = {"sync_to_apple_calendar": [{"title": p["title"], "start": p["start"]} for p in plans],
+                "remove_from_apple_calendar": [{"title": s["title"], "start": s["start"]} for s in stale],
                 "calendar": cal["title"], "failed": failed}
         return _guarded_write("sync_all", f"next_{days}_days", reason, dry_run, plan, do, cost=0)
     except (ApiError, AuthError, CalendarError, ValueError) as exc:

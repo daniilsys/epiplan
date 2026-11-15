@@ -69,6 +69,7 @@ class SchedulingTests(unittest.TestCase):
             patch.object(calendar, "calendars", return_value=[{"id": "main", "title": "Personal", "writable": True}]),
             patch.object(calendar, "upsert", return_value={"event": {"id": "apple"}, "created": True}),
             patch.object(calendar, "remove", return_value={"removed": True}),
+            patch.object(calendar, "tracked_events", return_value={}),
             patch.dict(os.environ, {"EPIPLAN_ENABLE_WRITES": "1", "EPIPLAN_MAX_WRITES": "5"}),
         ]
         for mocker in patches:
@@ -197,6 +198,70 @@ class SchedulingTests(unittest.TestCase):
         self.school.bookings = [activity(2, slots=True)]
         self.assertFalse(self.register(dry_run=False)["ok"])
         self.assertEqual(self.school.writes, [])
+
+    def test_sync_all_removes_unregistered_upcoming_events_only(self):
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        def iso(delta_days):
+            return (now + timedelta(days=delta_days)).isoformat()
+        ev1 = activity(1, start=iso(2), end=iso(2.1))
+        ev2 = {**activity(2, start=iso(5), end=iso(5.1)), "fullTitle": "Unregistered workshop"}
+        self.school.bookings = [ev1]
+        m1 = calendar.marker(1, self.school.login)
+        m2 = calendar.marker(2, self.school.login)
+        m_past = calendar.marker(3, self.school.login)
+        m_future = calendar.marker(4, self.school.login)
+        tracked = {
+            m1: {"id": "a1", "start": iso(2), "end": iso(2.1)},
+            m2: {"id": "a2", "start": iso(5), "end": iso(5.1)},
+            m_past: {"id": "a3", "start": iso(-2), "end": iso(-1.9)},
+            m_future: {"id": "a4", "start": iso(90), "end": iso(90.1)},
+        }
+        with patch.object(tools, "_fetch_events", return_value=[ev1, ev2]),              patch.object(calendar, "tracked_events", return_value=tracked):
+            preview = tools.sync_all("Wake sync", days=60, dry_run=True)
+            self.assertTrue(preview["ok"])
+            self.assertEqual([x["title"] for x in preview["would"]["remove_from_apple_calendar"]],
+                             ["Unregistered workshop"])
+            calendar.remove.assert_not_called()
+
+            applied = tools.sync_all("Wake sync", days=60, dry_run=False)
+            self.assertTrue(applied["ok"])
+            calendar.remove.assert_called_once_with(m2)
+            self.assertEqual([x["title"] for x in applied["result"]["removed"]], ["Unregistered workshop"])
+            self.assertEqual(applied["result"]["failed"], [])
+
+    def test_sync_all_keeps_registered_event_when_slot_resolution_fails(self):
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        s = (now + timedelta(days=2)).isoformat()
+        e = (now + timedelta(days=2, hours=1)).isoformat()
+        ev = activity(1, slots=True, start=s, end=e)
+        self.school.bookings = [ev]
+        self.school.slots = []
+        m1 = calendar.marker(1, self.school.login)
+        with patch.object(tools, "_fetch_events", return_value=[ev]),              patch.object(calendar, "tracked_events", return_value={m1: {"id": "a1", "start": s, "end": e}}):
+            result = tools.sync_all("Wake sync", days=60, dry_run=False)
+        self.assertTrue(result["ok"])
+        calendar.remove.assert_not_called()
+        self.assertEqual(len(result["result"]["failed"]), 1)
+
+    def test_sync_all_continues_when_one_removal_fails(self):
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        s1 = (now + timedelta(days=2)).isoformat()
+        s2 = (now + timedelta(days=4)).isoformat()
+        m1 = calendar.marker(11, self.school.login)
+        m2 = calendar.marker(12, self.school.login)
+        tracked = {
+            m1: {"id": "a1", "start": s1, "end": s1},
+            m2: {"id": "a2", "start": s2, "end": s2},
+        }
+        calendar.remove.side_effect = [calendar.CalendarError("locked"), {"removed": True}]
+        with patch.object(tools, "_fetch_events", return_value=[]),              patch.object(calendar, "tracked_events", return_value=tracked):
+            result = tools.sync_all("Wake sync", days=60, dry_run=False)
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(result["result"]["removed"]), 1)
+        self.assertEqual(len(result["result"]["failed"]), 1)
 
     def test_external_event_checks_both_sources_and_never_writes_to_school(self):
         self.school.bookings = [activity(2)]
@@ -367,6 +432,19 @@ class LocalStateTests(unittest.TestCase):
         self.assertEqual(calendar.external_marker("Lunch", START, END, "main"),
                          calendar.external_marker(" Lunch ", START, END, "main"))
         self.assertNotEqual(calendar.marker(1, "one@example.test"), calendar.marker(1, "two@example.test"))
+
+    def test_tracked_events_filters_epitech_prefix_and_fails_closed_on_corruption(self):
+        state_file = Path(self.temp.name) / "calendar-state.json"
+        m_epi = calendar.marker(1, "student@example.test")
+        m_ext = calendar.external_marker("Lunch", START, END, "main")
+        state_file.write_text(json.dumps({
+            m_epi: {"id": "1", "start": START, "end": END},
+            m_ext: {"id": "2", "start": START, "end": END},
+        }))
+        self.assertEqual(list(calendar.tracked_events().keys()), [m_epi])
+        state_file.write_text("{")
+        with self.assertRaises(calendar.CalendarError):
+            calendar.tracked_events()
 
 
 if __name__ == "__main__":
