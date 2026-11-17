@@ -148,6 +148,8 @@ Read pitfalls ✅:
 Key findings:
 - "Forgotten modules" (open for registration but not registered) are found through `/units/instances`, **not** `/events`: upcoming activities only ever belong to modules the student is already registered to.
 - `GET /events` needs `cursus` and `semester` (taken from `/auth/verify`). Passing `student=<login>` returns **403 `You cannot access this student`**.
+- `GET /events/{id}/registrations` for an activity **outside my cursus/semester** (listed by `GET /events` without `cursus`/`semester`) → **403 `You are not authorized to access this event`** (34 of 59 activities over one week, 2026-11-16). So another student's schedule can only be rebuilt from the activities of my own cursus and semester.
+- `GET /events?promotions=<cursusCode>:<promotion>` ✅ (array, several allowed): the activities of the modules followed by that promotion, without `cursus`/`semester`. Works for a student on other promotions (2029 over one week: ~25 activities). Their attendee lists still answer 403. `student=<login>` stays 403 for a classmate's login too (staff only: "resolved beforehand with a student search"), and `GET /students/promotions` answers 403 `Missing read permission on student_tracking` (2026-11-16).
 - Slot objects carry `registration.student` (name, login) for taken slots: the tools reduce this to `taken` / `mine`.
 
 **Write**: two reversible tests, on non-mandatory activities without slots.
